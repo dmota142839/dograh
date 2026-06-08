@@ -261,7 +261,7 @@ export function AppSidebar() {
           <div className={cn("flex items-center gap-2", isCollapsed && "hidden")}>
             <Link
               href="/"
-              className="notranslate flex items-center gap-2 px-2 text-xl font-bold"
+              className="notranslate flex flex-col px-2 text-sm font-bold leading-tight"
               translate="no"
             >
               After Hour Solutions
