@@ -19,3 +19,12 @@ coturn/
 *.wav
 dograh_pcm_cache/
 node_modules/
+
+# AHS white-label / self-host — never commit these
+secrets/
+_handoff-backups/
+certs/
+*.bak
+*.bak-*
+*.bak.*
+dograh_pcm_cache/

@@ -14,8 +14,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "5432:5432"
+    # ports dropped (AHS 2026-06-07): internal-only, avoids host 5432/5433 conflict
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,8 +29,9 @@ services:
 
   redis:
     image: redis:7
-    ports:
-      - "6379:6379"
+    # ports dropped (AHS 2026-06-07): internal-only, avoids valkey 6379 conflict
+    expose:
+      - "6379"
     command: >
       --requirepass redissecret
     volumes:
@@ -51,8 +53,9 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_API_CORS_ALLOW_ORIGIN: "*"
     ports:
-      - "127.0.0.1:9000:9000" # Bind to localhost explicitly
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9003:9001" # AHS 2026-06-07: console only on 9003 (9000=zoho-shim); api uses minio:9000 internally
+    expose:
+      - "9000"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -60,8 +63,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    labels:
+      # AHS 2026-06-07: /voice-audio → minio (matches dograh's nginx template)
+      - "traefik.enable=true"
+      - "traefik.docker.network=web_proxy"
+      - "traefik.http.routers.dograh-audio.rule=Host(`voice.ahsbots.com`) && PathPrefix(`/voice-audio`)"
+      - "traefik.http.routers.dograh-audio.priority=90"
+      - "traefik.http.routers.dograh-audio.entrypoints=websecure"
+      - "traefik.http.routers.dograh-audio.tls=true"
+      - "traefik.http.routers.dograh-audio.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dograh-audio.loadbalancer.server.port=9000"
     networks:
       - app-network
+      - web_proxy
 
   dograh-init:
     image: bash:5.2
@@ -126,8 +140,29 @@ services:
     networks:
       - app-network
 
+  # AHS 2026-06-08: persistent SSH tunnel to Wazo's localhost-bound ARI (127.0.0.1:5039).
+  # dograh's ARI provider uses http://ari-tunnel:5039 (control channel). Media flows the
+  # OTHER way: Wazo's websocket_client.conf connects out to wss://voice.ahsbots.com.
+  ari-tunnel:
+    image: alpine:3.20
+    container_name: dograh-ari-tunnel
+    restart: unless-stopped
+    volumes:
+      - ./secrets:/keys:ro  # stable key copy (orig ssh-keys/id_ed25519 corrupted to dir by WSL mount hazard)
+    command: >
+      sh -c "apk add --no-cache autossh openssh-client >/dev/null 2>&1 &&
+      cp /keys/wazo_ari_key /tmp/key && chown root:root /tmp/key && chmod 600 /tmp/key &&
+      exec autossh -M 0 -N -T
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+      -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes
+      -i /tmp/key -L 0.0.0.0:5039:127.0.0.1:5039 root@wazo.ahsbots.com"
+    networks:
+      - app-network
+
   api:
     image: ${REGISTRY:-dograhai}/dograh-api:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # AHS 2026-06-07: robust CLIProxy reach (:8417)
     volumes:
       - shared-tmp:/tmp
     environment:
@@ -185,7 +220,7 @@ services:
       POSTHOG_HOST: "https://us.i.posthog.com"
 
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000" # AHS 2026-06-07
     depends_on:
       postgres:
         condition: service_healthy
@@ -193,8 +228,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      cloudflared:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -205,12 +238,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    labels:
+      # AHS 2026-06-07: /api/v1 (incl. WS signaling) → backend directly, matching dograh's
+      # nginx template. Traefik handles the WS Upgrade. Priority 100 > ui root router (1).
+      - "traefik.enable=true"
+      - "traefik.docker.network=web_proxy"
+      - "traefik.http.routers.dograh-api.rule=Host(`voice.ahsbots.com`) && PathPrefix(`/api/v1`)"
+      - "traefik.http.routers.dograh-api.priority=100"
+      - "traefik.http.routers.dograh-api.entrypoints=websecure"
+      - "traefik.http.routers.dograh-api.tls=true"
+      - "traefik.http.routers.dograh-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dograh-api.loadbalancer.server.port=8000"
     networks:
       - app-network
+      - web_proxy
 
   ui:
-    image: ${REGISTRY:-dograhai}/dograh-ui:latest
+    image: ahs-voice-ui:latest   # AHS white-label local build (was ${REGISTRY:-dograhai}/dograh-ui:latest)
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
     environment:
+      # AHS 2026-06-07: Docker auto-sets HOSTNAME=<container-id>; Next.js standalone binds to that
+      # hostname's single IP instead of 0.0.0.0. With 2 networks (app-network+web_proxy) that broke
+      # the host publish + healthcheck + made it "unhealthy" so Traefik skipped it. Force 0.0.0.0.
+      HOSTNAME: "0.0.0.0"
       # Server-side URL (SSR, internal Docker network)
       BACKEND_URL: "${BACKEND_URL:-http://api:8000}"
       NODE_ENV: "oss"
@@ -221,7 +273,7 @@ services:
       POSTHOG_KEY: "phc_ItizB1dP6yv7ZYobbcqrpxTdbomDA8hJFSEmAMdYvIr"
       POSTHOG_HOST: "https://us.posthog.com"
     ports:
-      - "3010:3010"
+      - "127.0.0.1:3010:3010" # AHS 2026-06-07
     depends_on:
       api:
         condition: service_healthy
@@ -229,7 +281,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget --no-verbose --tries=1 --spider http://localhost:3010 || exit 1",
+          "wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:3010 || exit 1",
         ]
       interval: 30s
       timeout: 10s
@@ -237,15 +289,22 @@ services:
       start_period: 30s
     networks:
       - app-network
+      - web_proxy
+    labels:
+      # AHS 2026-06-07: dograh UI = ROOT of voice.ahsbots.com (UI proxies its own backend,
+      # so only this service needs a route). Low priority so the existing /whisper & /kokoro
+      # PathPrefix routers always win. dograh has its own login — NO tts-auth here.
+      - "traefik.enable=true"
+      - "traefik.docker.network=web_proxy"
+      - "traefik.http.routers.dograh.rule=Host(`voice.ahsbots.com`)"
+      - "traefik.http.routers.dograh.priority=1"
+      - "traefik.http.routers.dograh.entrypoints=websecure"
+      - "traefik.http.routers.dograh.tls=true"
+      - "traefik.http.routers.dograh.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dograh.loadbalancer.server.port=3010"
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared-tunnel
-    command: tunnel --no-autoupdate --url http://api:8000 --metrics 0.0.0.0:2000
-    ports:
-      - "2000:2000" # Expose metrics endpoint
-    networks:
-      - app-network
+  # cloudflared service REMOVED (AHS 2026-06-07): default config ran a PUBLIC Cloudflare
+  # quick-tunnel exposing api:8000 to the internet. Not wanted; api depends_on entry removed too.
 
 volumes:
   postgres_data:
@@ -262,3 +321,5 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  web_proxy:
+    external: true

@@ -14,6 +14,7 @@ interface GitHubStarBadgeProps {
 }
 
 export function GitHubStarBadge({ className, label, showCount, source }: GitHubStarBadgeProps) {
+  return null; // AHS white-label: hide upstream GitHub star badge
   const [starCount, setStarCount] = useState<string | null>(null);
 
   useEffect(() => {
