@@ -5,7 +5,11 @@ const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
   experimental: {
-    serverSourceMaps: true,
+    // AHS 2026-09-26: low-memory self-host build. The stock build needs >5 GB and took the
+    // shared Docker Desktop VM down (load 361, 0 MB available). Upstream value: serverSourceMaps: true.
+    serverSourceMaps: false,
+    webpackMemoryOptimizations: true,
+    cpus: 2,
   },
   async rewrites() {
     return [
@@ -28,6 +32,9 @@ const nextConfig: NextConfig = {
 };
 
 export default withSentryConfig(nextConfig, {
+  // AHS 2026-09-26: no Sentry auth token on this self-host, so nothing is uploaded; skip generating the maps.
+  sourcemaps: { disable: true },
+
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
