@@ -181,7 +181,10 @@ services:
       - app-network
 
   api:
-    image: ${REGISTRY:-dograhai}/dograh-api:1.47.0   # AHS 2026-09-26: pinned to a release, never :latest
+    image: ahs-dograh-api:1.47.0-ahs1   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
+    build:
+      context: .
+      dockerfile: Dockerfile.ahs-api
     restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     extra_hosts:
       - "host.docker.internal:host-gateway"   # AHS 2026-06-07: robust CLIProxy reach (:8417)
@@ -192,6 +195,7 @@ services:
 
       # Set to "false" in .env to disable public signup (invite-only installs).
       ENABLE_SIGNUP: "${ENABLE_SIGNUP:-true}"
+      AHS_VAD_STOP_SECS: "${AHS_VAD_STOP_SECS:-0.8}"   # AHS: VAD end-of-segment silence (upstream hardcodes 0.2)
 
       # Public origin for this deployment. The API derives BACKEND_API_ENDPOINT,
       # MINIO_PUBLIC_ENDPOINT and TURN_HOST from PUBLIC_BASE_URL / PUBLIC_HOST when

@@ -1,0 +1,4 @@
+# AHS thin layer over the upstream API image: one patched file, nothing rebuilt.
+# Re-check the patch against upstream on every Dograh upgrade (diff run_pipeline.py vs the new tag).
+FROM dograhai/dograh-api:1.47.0
+COPY --chown=dograh:dograh api/services/pipecat/run_pipeline.py /app/api/services/pipecat/run_pipeline.py

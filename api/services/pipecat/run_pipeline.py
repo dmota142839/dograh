@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Optional
 
 from fastapi import HTTPException
@@ -977,7 +978,12 @@ async def _run_pipeline_impl(
         get_parent_context=engine._get_otel_context,
     )
     user_mute_strategies = _create_user_mute_strategies(engine, answer_supervisor)
-    user_vad_analyzer = SileroVADAnalyzer(params=VADParams(stop_secs=0.2))
+    # AHS 2026-09-26: end-of-segment silence is configurable. Segmented STTs (Speaches/Whisper)
+    # transcribe each VAD segment alone; at 0.2 s a sentence is cut into context-free fragments
+    # ("Hi, I'm Paul in the building." vs "Hi, I'm calling about your services, front desk." at 0.8 s).
+    user_vad_analyzer = SileroVADAnalyzer(
+        params=VADParams(stop_secs=float(os.getenv("AHS_VAD_STOP_SECS", "0.2")))
+    )
 
     # Configure turn strategies based on STT provider, model, and workflow configuration
     if is_realtime:
