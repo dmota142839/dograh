@@ -1,6 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     environment:
       POSTGRES_USER: postgres
       # Sourced from .env. Defaults to "postgres"
@@ -29,6 +30,7 @@ services:
 
   redis:
     image: redis:7
+    restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     # ports dropped (AHS 2026-06-07): internal-only, avoids valkey 6379 conflict
     expose:
       - "6379"
@@ -47,6 +49,7 @@ services:
   minio:
     image: minio/minio
     container_name: minio
+    restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -161,6 +164,7 @@ services:
 
   api:
     image: ${REGISTRY:-dograhai}/dograh-api:latest
+    restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     extra_hosts:
       - "host.docker.internal:host-gateway"   # AHS 2026-06-07: robust CLIProxy reach (:8417)
     volumes:
@@ -255,6 +259,7 @@ services:
 
   ui:
     image: ahs-voice-ui:latest   # AHS white-label local build (was ${REGISTRY:-dograhai}/dograh-ui:latest)
+    restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     build:
       context: .
       dockerfile: ui/Dockerfile
@@ -307,19 +312,29 @@ services:
   # quick-tunnel exposing api:8000 to the internet. Not wanted; api depends_on entry removed too.
 
 volumes:
+  # AHS 2026-06-09: names pinned to the original `dograh_*` so this stack keeps the
+  # same data volumes whether run standalone (project `dograh`) OR merged into the
+  # `voice-stack` project via include — prevents the DB/object store being orphaned.
   postgres_data:
+    name: dograh_postgres_data
   redis_data:
+    name: dograh_redis_data
   minio-data:
+    name: dograh_minio-data
     driver: local
   shared-tmp:
+    name: dograh_shared-tmp
     driver: local
   nginx-generated:
+    name: dograh_nginx-generated
     driver: local
   coturn-generated:
+    name: dograh_coturn-generated
     driver: local
 
 networks:
   app-network:
+    name: dograh_app-network   # AHS 2026-06-09: pinned (see volumes note)
     driver: bridge
   web_proxy:
     external: true
