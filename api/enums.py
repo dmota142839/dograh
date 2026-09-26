@@ -17,6 +17,45 @@ class CallType(Enum):
     OUTBOUND = "outbound"
 
 
+class AnswerAction(str, Enum):
+    # Play the workflow opening, then allow normal conversation.
+    RELEASE = "release"
+    # Play the configured voicemail message, then disconnect.
+    LEAVE_MESSAGE = "leave_message"
+    # Disconnect without playing a message.
+    DROP = "drop"
+    # Play the screening introduction, then listen again for the subscriber.
+    SCREEN_THEN_REARM = "screen_then_rearm"
+    # Stop answer handling because the pipeline has ended.
+    CANCELLED = "cancelled"
+
+
+class TelephonyCallStatus(str, Enum):
+    INITIATED = "initiated"
+    RINGING = "ringing"
+    IN_PROGRESS = "in-progress"
+    ANSWERED = "answered"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    BUSY = "busy"
+    NO_ANSWER = "no-answer"
+    CANCELED = "canceled"
+    ERROR = "error"
+
+    @classmethod
+    def from_raw(cls, value: object) -> "TelephonyCallStatus | None":
+        if isinstance(value, cls):
+            return value
+
+        if value in (None, ""):
+            return None
+
+        try:
+            return cls(str(value).lower())
+        except ValueError:
+            return None
+
+
 class WorkflowRunMode(Enum):
     ARI = "ari"
     PLIVO = "plivo"
@@ -24,6 +63,7 @@ class WorkflowRunMode(Enum):
     VONAGE = "vonage"
     VOBIZ = "vobiz"
     CLOUDONIX = "cloudonix"
+    EXOTEL = "exotel"
     TELNYX = "telnyx"
     WEBRTC = "webrtc"
     SMALLWEBRTC = "smallwebrtc"
@@ -34,6 +74,45 @@ class WorkflowRunMode(Enum):
     STASIS = "stasis"
     VOICE = "VOICE"
     CHAT = "CHAT"
+
+
+class WorkflowRunChannel(Enum):
+    """How a run reached the agent, coarser than the provider-level mode.
+
+    `WorkflowRunMode` records the specific transport (twilio, telnyx, ...);
+    this groups those into the three channels users think in terms of when
+    filtering their runs.
+    """
+
+    TELEPHONY = "telephony"
+    WEB = "web"
+    CHAT = "chat"
+
+
+# Every WorkflowRunMode belongs to exactly one channel. Historical modes are
+# mapped too, so filtering never silently drops old runs.
+WORKFLOW_RUN_MODES_BY_CHANNEL: dict[str, tuple[str, ...]] = {
+    WorkflowRunChannel.TELEPHONY.value: (
+        WorkflowRunMode.ARI.value,
+        WorkflowRunMode.PLIVO.value,
+        WorkflowRunMode.TWILIO.value,
+        WorkflowRunMode.VONAGE.value,
+        WorkflowRunMode.VOBIZ.value,
+        WorkflowRunMode.CLOUDONIX.value,
+        WorkflowRunMode.EXOTEL.value,
+        WorkflowRunMode.TELNYX.value,
+        WorkflowRunMode.STASIS.value,
+        WorkflowRunMode.VOICE.value,
+    ),
+    WorkflowRunChannel.WEB.value: (
+        WorkflowRunMode.WEBRTC.value,
+        WorkflowRunMode.SMALLWEBRTC.value,
+    ),
+    WorkflowRunChannel.CHAT.value: (
+        WorkflowRunMode.TEXTCHAT.value,
+        WorkflowRunMode.CHAT.value,
+    ),
+}
 
 
 class StorageBackend(Enum):
@@ -77,8 +156,6 @@ class WorkflowRunStatus(Enum):
 
 
 class OrganizationConfigurationKey(Enum):
-    DISPOSITION_CODE_MAPPING = "DISPOSITION_CODE_MAPPING"
-    DISPOSITION_MESSAGE_TEMPLATE = "DISPOSITION_MESSAGE_TEMPLATE"
     CONCURRENT_CALL_LIMIT = "CONCURRENT_CALL_LIMIT"
     TELEPHONY_CONFIGURATION = (
         "TELEPHONY_CONFIGURATION"  # Stores all providers + active one
@@ -89,6 +166,23 @@ class OrganizationConfigurationKey(Enum):
     LANGFUSE_CREDENTIALS = (
         "LANGFUSE_CREDENTIALS"  # Org-level Langfuse tracing credentials
     )
+    MODEL_CONFIGURATION_V2 = (
+        "MODEL_CONFIGURATION_V2"  # Org-level v2 AI model configuration
+    )
+    ORGANIZATION_PREFERENCES = "ORGANIZATION_PREFERENCES"  # Org-level defaults such as timezone/test call number
+    MODEL_CONFIGURATION_PREFERENCES = "MODEL_CONFIGURATION_PREFERENCES"  # Deprecated; read fallback for old org preferences
+    ORGANIZATION_BOOTSTRAP = (
+        "ORGANIZATION_BOOTSTRAP"  # Single-winner lease for post-signup provisioning
+    )
+
+
+class UserConfigurationKey(Enum):
+    """Keys for the per-user keyed JSON store (user_configurations)."""
+
+    MODEL_CONFIGURATION = (
+        "MODEL_CONFIGURATION"  # Legacy per-user v1 AI model configuration
+    )
+    ONBOARDING = "ONBOARDING"  # Post-signup onboarding state (gate, tooltips, actions)
 
 
 class WorkflowStatus(Enum):
@@ -131,6 +225,7 @@ class ToolCategory(Enum):
     HTTP_API = "http_api"  # Custom HTTP API calls (implemented)
     END_CALL = "end_call"  # End call tool
     TRANSFER_CALL = "transfer_call"  # Transfer call to phone number (Twilio only)
+    TRANSFER_AGENT = "transfer_agent"  # Hand the live call to another Dograh agent
     CALCULATOR = "calculator"  # Built-in calculator tool
     NATIVE = "native"  # Built-in integrations (future: dtmf_input)
     INTEGRATION = "integration"  # Third-party integrations (future: Google Calendar, Salesforce, etc.)
@@ -160,3 +255,7 @@ class PostHogEvent(str, Enum):
     AGENT_EMBEDDED = "agent_embedded"
     SIGNED_UP = "signed_up"
     SIGNED_IN = "signed_in"
+    ORGANIZATION_CREATED = "organization_created"
+    ORGANIZATION_USER_ASSOCIATED = "organization_user_associated"
+    # usage_* events track orgs hitting capacity/limit boundaries
+    USAGE_CONCURRENT_CALL_LIMIT_REACHED = "usage_concurrent_call_limit_reached"

@@ -1,7 +1,8 @@
 """Service layer for reusable tool management.
 
-Routes and MCP tools both use this module so validation, credential
-scoping, MCP discovery, and analytics stay consistent.
+Routes and MCP tools both use this module so validation, organization
+scoping of what a definition references, MCP discovery, and analytics stay
+consistent.
 """
 
 from __future__ import annotations
@@ -71,6 +72,23 @@ def _credential_uuid_from_definition(definition: dict[str, Any]) -> Optional[str
     return credential_uuid if isinstance(credential_uuid, str) else None
 
 
+def _credential_uuids_from_definition(definition: dict[str, Any]) -> list[str]:
+    credential_uuids: list[str] = []
+    top_level = _credential_uuid_from_definition(definition)
+    if top_level:
+        credential_uuids.append(top_level)
+
+    config = definition.get("config")
+    if isinstance(config, dict):
+        resolver = config.get("resolver")
+        if isinstance(resolver, dict):
+            resolver_credential_uuid = resolver.get("credential_uuid")
+            if isinstance(resolver_credential_uuid, str) and resolver_credential_uuid:
+                credential_uuids.append(resolver_credential_uuid)
+
+    return list(dict.fromkeys(credential_uuids))
+
+
 async def fetch_credential(credential_uuid: Optional[str], organization_id: int):
     """Best-effort credential lookup for MCP auth/discovery."""
     if not credential_uuid:
@@ -82,26 +100,46 @@ async def fetch_credential(credential_uuid: Optional[str], organization_id: int)
         return None
 
 
-async def validate_tool_credential_references(
+async def validate_tool_references(
     definition: dict[str, Any], *, organization_id: int
 ) -> None:
-    """Ensure credential UUID references belong to the caller's organization."""
-    credential_uuid = _credential_uuid_from_definition(definition)
-    if not credential_uuid:
-        return
+    """Ensure everything a definition points at belongs to the caller's org.
 
-    credential = await db_client.get_credential_by_uuid(
-        credential_uuid, organization_id
-    )
-    if not credential:
-        raise ToolManagementError(
-            "credential_not_found",
-            (
-                f"Credential '{credential_uuid}' was not found in this organization. "
-                "Create it in the UI first, then retry with its credential_uuid."
-            ),
-            status_code=404,
+    A tool names other resources by id -- a credential to authenticate with,
+    the agent a transfer hands the call to. The id proves the row exists and
+    nothing about who owns it, so each one is fetched under the caller's
+    organization and refused if it comes back empty. Checked here rather than
+    where the tool runs, because there the failure lands mid-call.
+    """
+    for credential_uuid in _credential_uuids_from_definition(definition):
+        credential = await db_client.get_credential_by_uuid(
+            credential_uuid, organization_id
         )
+        if not credential:
+            raise ToolManagementError(
+                "credential_not_found",
+                (
+                    f"Credential '{credential_uuid}' was not found in this "
+                    "organization. Create it in the UI first, then retry with its "
+                    "credential_uuid."
+                ),
+                status_code=404,
+            )
+
+    if definition.get("type") == ToolCategory.TRANSFER_AGENT.value:
+        # Required and typed by `TransferAgentConfig`, so it is an int here.
+        workflow_id = definition["config"]["workflow_id"]
+        if not await db_client.get_workflow(
+            workflow_id, organization_id=organization_id
+        ):
+            raise ToolManagementError(
+                "destination_not_found",
+                (
+                    f"Agent '{workflow_id}' was not found in this organization. "
+                    "A transfer can only hand the call to your own agents."
+                ),
+                status_code=404,
+            )
 
 
 async def populate_discovered_tools(
@@ -153,7 +191,7 @@ async def create_tool_for_user(
         )
 
     definition = request.definition.model_dump()
-    await validate_tool_credential_references(
+    await validate_tool_references(
         definition, organization_id=user.selected_organization_id
     )
     definition = await populate_discovered_tools(

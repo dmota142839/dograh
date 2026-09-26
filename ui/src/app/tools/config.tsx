@@ -1,21 +1,83 @@
 "use client";
 
-import { Calculator, Cog, Globe, type LucideIcon, PhoneForwarded, PhoneOff, Puzzle } from "lucide-react";
+import { ArrowLeftRight, Calculator, Cog, Globe, type LucideIcon, PhoneForwarded, PhoneOff, Puzzle } from "lucide-react";
 import { type ReactNode } from "react";
 
 import type {
     CalculatorToolDefinition,
+    ContextDestinationMappingConfig,
+    ContextDestinationRoute,
+    ContextDestinationRule,
     EndCallConfig,
     EndCallToolDefinition,
     HttpApiToolDefinition,
     McpToolDefinition,
+    TransferAgentConfig,
+    TransferAgentToolDefinition,
     TransferCallConfig,
     TransferCallToolDefinition,
 } from "@/client/types.gen";
+import { createUuid } from "@/lib/uuid";
 
-export type ToolCategory = "http_api" | "end_call" | "transfer_call" | "calculator" | "native" | "integration" | "mcp";
+export type ToolCategory = "http_api" | "end_call" | "transfer_call" | "transfer_agent" | "calculator" | "native" | "integration" | "mcp";
 
 export type EndCallMessageType = "none" | "custom" | "audio";
+export type TransferDestinationSource = "static" | "dynamic" | "context_mapping";
+
+export interface ContextDestinationRouteRow extends ContextDestinationRoute {
+    id: string;
+}
+
+export interface ContextDestinationRuleRow {
+    id: string;
+    context_path: string;
+    routes: ContextDestinationRouteRow[];
+}
+
+export function createContextDestinationRouteRow(
+    route?: Partial<ContextDestinationRoute>,
+): ContextDestinationRouteRow {
+    return {
+        id: createUuid(),
+        context_value: route?.context_value ?? "",
+        destination: route?.destination ?? "",
+    };
+}
+
+export function createContextDestinationRuleRow(
+    rule?: Partial<ContextDestinationRule>,
+): ContextDestinationRuleRow {
+    return {
+        id: createUuid(),
+        context_path: rule?.context_path ?? "",
+        routes: (rule?.routes ?? [{}]).map(createContextDestinationRouteRow),
+    };
+}
+
+/** Normalize a stored mapping (ordered or legacy single-rule) into editable rows. */
+export function contextMappingToRuleRows(
+    mapping?: ContextDestinationMappingConfig | null,
+): ContextDestinationRuleRow[] {
+    if (!mapping) return [];
+    const rules = mapping.rules?.length
+        ? mapping.rules
+        : mapping.context_path || mapping.routes?.length
+            ? [{ context_path: mapping.context_path || "", routes: mapping.routes || [] }]
+            : [];
+    return rules.map(createContextDestinationRuleRow);
+}
+
+export function ruleRowsToContextMappingRules(
+    rows: ContextDestinationRuleRow[],
+): ContextDestinationRule[] {
+    return rows.map((rule) => ({
+        context_path: rule.context_path.trim(),
+        routes: rule.routes.map((route) => ({
+            context_value: route.context_value.trim(),
+            destination: route.destination.trim(),
+        })),
+    }));
+}
 
 export interface ToolCategoryConfig {
     value: ToolCategory;
@@ -55,13 +117,25 @@ export const TOOL_CATEGORIES: ToolCategoryConfig[] = [
     {
         value: "transfer_call",
         label: "Transfer Call",
-        description: "Transfer the call to another phone number (Twilio only)",
+        description: "Transfer the call to another phone number (Twilio, Plivo)",
         icon: PhoneForwarded,
         iconName: "phone-forwarded",
         iconColor: "#10B981",
         autoFill: {
             name: "Transfer Call",
             description: "Transfer the caller to another phone number when requested",
+        },
+    },
+    {
+        value: "transfer_agent",
+        label: "Transfer To Agent",
+        description: "Hand the live call to another Dograh agent, without dropping the caller",
+        icon: ArrowLeftRight,
+        iconName: "arrow-left-right",
+        iconColor: "#0EA5E9",
+        autoFill: {
+            name: "Transfer To Agent",
+            description: "Transfer the caller to a specialist agent when their question is outside what you handle",
         },
     },
     {
@@ -129,6 +203,8 @@ export function getToolTypeLabel(category: string): string {
             return "End Call Tool";
         case "transfer_call":
             return "Transfer Call Tool";
+        case "transfer_agent":
+            return "Transfer To Agent Tool";
         case "http_api":
             return "HTTP API Tool";
         case "calculator":
@@ -153,6 +229,9 @@ export const DEFAULT_END_CALL_CONFIG: EndCallConfig = {
     endCallReason: false,
 };
 
+export const DEFAULT_TRANSFER_AGENT_MESSAGE =
+    "Let me connect you with the right person. One moment please.";
+
 export const DEFAULT_TRANSFER_CALL_CONFIG: TransferCallConfig = {
     destination: "",
     messageType: "none",
@@ -164,6 +243,7 @@ export type ToolDefinition =
     | HttpApiToolDefinition
     | EndCallToolDefinition
     | TransferCallToolDefinition
+    | TransferAgentToolDefinition
     | CalculatorToolDefinition
     | McpToolDefinition;
 
@@ -179,6 +259,21 @@ export function createTransferCallDefinition(config: TransferCallConfig): Transf
     return {
         schema_version: 1,
         type: "transfer_call",
+        config,
+    };
+}
+
+/**
+ * A transfer tool is defined by where it sends the caller, so there is no
+ * meaningful empty default — the create dialog collects the destination and
+ * builds the definition from it.
+ */
+export function createTransferAgentDefinition(
+    config: TransferAgentConfig,
+): TransferAgentToolDefinition {
+    return {
+        schema_version: 1,
+        type: "transfer_agent",
         config,
     };
 }

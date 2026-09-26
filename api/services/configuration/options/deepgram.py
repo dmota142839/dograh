@@ -1,4 +1,34 @@
-DEEPGRAM_STT_MODELS = ("nova-3-general", "flux-general-en", "flux-general-multi")
+# Deepgram serves the same APIs from several regional hosts, and the host is what
+# decides where audio is processed - and therefore which jurisdiction the audio
+# lands in. api.eu.deepgram.com keeps /v1/listen, /v2/listen and /v1/speak inside
+# EU infrastructure, which is what a European deployment needs to avoid an
+# undeclared transfer. Regional hosts accept the same API keys as the default.
+# https://developers.deepgram.com/reference/custom-endpoints
+DEEPGRAM_DEFAULT_BASE_URL = "https://api.deepgram.com"
+DEEPGRAM_BASE_URLS = (
+    DEEPGRAM_DEFAULT_BASE_URL,
+    "https://api.eu.deepgram.com",
+    "https://api.au.deepgram.com",
+)
+
+DEEPGRAM_FLUX_MODELS = ("flux-general-en", "flux-general-multi")
+DEEPGRAM_FLUX_MULTILINGUAL_LANGUAGES = (
+    "de",
+    "en",
+    "es",
+    "fr",
+    "hi",
+    "it",
+    "ja",
+    "nl",
+    "pt",
+    "ru",
+)
+DEEPGRAM_FLUX_MULTILINGUAL_LANGUAGE_OPTIONS = (
+    "multi",
+    *DEEPGRAM_FLUX_MULTILINGUAL_LANGUAGES,
+)
+DEEPGRAM_STT_MODELS = ("nova-3-general", "nova-3-medical", *DEEPGRAM_FLUX_MODELS)
 DEEPGRAM_LANGUAGES = (
     "multi",
     "ar",
