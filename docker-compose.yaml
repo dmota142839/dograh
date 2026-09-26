@@ -61,7 +61,7 @@ services:
       - app-network
 
   minio:
-    image: quay.io/minio/minio
+    image: minio/minio   # AHS 2026-09-26: upstream moved to quay.io/minio/minio; anonymous pull returned "unauthorized". Keep the local image that owns dograh_minio-data.
     container_name: minio
     restart: unless-stopped   # AHS 2026-06-09: survive host/Docker reboot
     command: server /data --console-address ":9001"
