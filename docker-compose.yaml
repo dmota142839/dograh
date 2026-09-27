@@ -181,7 +181,7 @@ services:
       - app-network
 
   api:
-    image: ahs-dograh-api:1.47.0-ahs1   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
+    image: ahs-dograh-api:1.47.0-ahs2   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
     build:
       context: .
       dockerfile: Dockerfile.ahs-api
@@ -341,8 +341,12 @@ services:
       - "traefik.http.routers.dograh-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.dograh-api.loadbalancer.server.port=8000"
     networks:
-      - app-network
-      - web_proxy
+      app-network: {}
+      web_proxy: {}
+      # AHS 2026-09-27: local Wazo lab (projects/wazo-local). Asterisk reaches us at ws://dograh-api:8000
+      # for call media; we reach its ARI at http://asterisk:5039. Needs the lab network to exist.
+      wazo-lab:
+        aliases: [dograh-api]
 
   ui:
     image: ahs-voice-ui:latest   # AHS white-label local build (was ${REGISTRY:-dograhai}/dograh-ui:latest)
@@ -423,3 +427,6 @@ networks:
     driver: bridge
   web_proxy:
     external: true
+  wazo-lab:
+    external: true
+    name: wazo-local_default

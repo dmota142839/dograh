@@ -1868,6 +1868,7 @@ class PipecatEngine:
             tools = await db_client.get_tools_by_uuids(
                 list(tool_uuids), organization_id
             )
+            pending: list = []
             for tool in tools:
                 if tool.category != ToolCategory.MCP.value:
                     continue
@@ -1902,7 +1903,20 @@ class PipecatEngine:
                     sse_read_timeout_secs=cfg["sse_read_timeout_secs"],
                 )
                 agent.mcp_sessions[tool.tool_uuid] = session
-                await session.start_managed()
+                pending.append(session)
+            # AHS 2026-09-27: connect MCP servers concurrently instead of one after
+            # another. Sequential startup summed every server's handshake (voipms
+            # 3.7 s + booking 1.6 s + crm-ops 3.3 s = 8.7 s of dead air before the
+            # greeting on PSTN calls). Each session owns its own task, so running
+            # them in parallel is safe; a failure still degrades per session.
+            results = await asyncio.gather(
+                *(s.start_managed() for s in pending), return_exceptions=True
+            )
+            for s, r in zip(pending, results):
+                if isinstance(r, BaseException):
+                    logger.warning(
+                        f"MCP tool '{s._tool_name}' failed to start; call proceeds without it: {r}"
+                    )
         except Exception as e:
             logger.warning(
                 f"Failed to open MCP sessions; call proceeds without MCP tools: {e}",
