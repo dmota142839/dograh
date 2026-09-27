@@ -1909,14 +1909,25 @@ class PipecatEngine:
             # 3.7 s + booking 1.6 s + crm-ops 3.3 s = 8.7 s of dead air before the
             # greeting on PSTN calls). Each session owns its own task, so running
             # them in parallel is safe; a failure still degrades per session.
-            results = await asyncio.gather(
-                *(s.start_managed() for s in pending), return_exceptions=True
-            )
-            for s, r in zip(pending, results):
-                if isinstance(r, BaseException):
-                    logger.warning(
-                        f"MCP tool '{s._tool_name}' failed to start; call proceeds without it: {r}"
-                    )
+            # AHS 2026-09-27 (2): run that startup in the BACKGROUND so the greeting
+            # never waits on it. Tool registration awaits this task only for nodes
+            # that actually use MCP tools (see _ahs_await_mcp_startup in
+            # pipecat_engine_custom_tools.py); Start Call has none, so the caller
+            # hears the greeting while crm-ops (~4 s, n8n -> Zoho) is still connecting.
+            async def _ahs_start_all():
+                results = await asyncio.gather(
+                    *(s.start_managed() for s in pending), return_exceptions=True
+                )
+                for s, r in zip(pending, results):
+                    if isinstance(r, BaseException):
+                        logger.warning(
+                            f"MCP tool '{s._tool_name}' failed to start; call proceeds without it: {r}"
+                        )
+
+            if pending:
+                agent._ahs_mcp_startup = asyncio.create_task(
+                    _ahs_start_all(), name="ahs-mcp-startup"
+                )
         except Exception as e:
             logger.warning(
                 f"Failed to open MCP sessions; call proceeds without MCP tools: {e}",

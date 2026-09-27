@@ -147,6 +147,20 @@ class CustomToolManager:
         """Get the organization ID from the engine (shared cache)."""
         return await self._engine._get_organization_id()
 
+    async def _ahs_await_mcp_startup(self, tools) -> None:
+        """AHS 2026-09-27: MCP servers connect in the background (see
+        PipecatEngine._open_mcp_sessions). Wait for them only when this node
+        uses MCP tools, so nodes without MCP (Start Call) never block on them."""
+        task = getattr(self._agent, "_ahs_mcp_startup", None)
+        if task is None or task.done():
+            return
+        if not any(t.category == ToolCategory.MCP.value for t in tools):
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=15)
+        except Exception as e:
+            logger.warning(f"MCP background startup not finished in time: {e}")
+
     async def get_tool_schemas(
         self,
         tool_uuids: list[str],
@@ -170,6 +184,7 @@ class CustomToolManager:
 
         try:
             tools = await db_client.get_tools_by_uuids(tool_uuids, organization_id)
+            await self._ahs_await_mcp_startup(tools)
 
             schemas: list[FunctionSchema] = []
             for tool in tools:
@@ -249,6 +264,7 @@ class CustomToolManager:
 
         try:
             tools = await db_client.get_tools_by_uuids(tool_uuids, organization_id)
+            await self._ahs_await_mcp_startup(tools)
 
             for tool in tools:
                 if tool.category == ToolCategory.CALCULATOR.value:

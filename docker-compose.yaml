@@ -181,7 +181,7 @@ services:
       - app-network
 
   api:
-    image: ahs-dograh-api:1.47.0-ahs2   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
+    image: ahs-dograh-api:1.47.0-ahs3   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
     build:
       context: .
       dockerfile: Dockerfile.ahs-api
