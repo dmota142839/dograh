@@ -181,7 +181,7 @@ services:
       - app-network
 
   api:
-    image: ahs-dograh-api:1.47.0-ahs3   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
+    image: ahs-dograh-api:1.47.0-ahs4   # AHS 2026-09-26: thin layer over dograhai/dograh-api:1.47.0 (Dockerfile.ahs-api)
     build:
       context: .
       dockerfile: Dockerfile.ahs-api
@@ -196,6 +196,8 @@ services:
       # Set to "false" in .env to disable public signup (invite-only installs).
       ENABLE_SIGNUP: "${ENABLE_SIGNUP:-true}"
       AHS_VAD_STOP_SECS: "${AHS_VAD_STOP_SECS:-0.8}"   # AHS: VAD end-of-segment silence (upstream hardcodes 0.2)
+      AHS_VAD_CONFIDENCE: "${AHS_VAD_CONFIDENCE:-0.7}"   # AHS: speech-probability threshold (upstream 0.7)
+      AHS_VAD_MIN_VOLUME: "${AHS_VAD_MIN_VOLUME:-0.6}"   # AHS: minimum loudness to count as speech (upstream 0.6)
 
       # Public origin for this deployment. The API derives BACKEND_API_ENDPOINT,
       # MINIO_PUBLIC_ENDPOINT and TURN_HOST from PUBLIC_BASE_URL / PUBLIC_HOST when

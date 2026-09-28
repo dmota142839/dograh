@@ -982,7 +982,13 @@ async def _run_pipeline_impl(
     # transcribe each VAD segment alone; at 0.2 s a sentence is cut into context-free fragments
     # ("Hi, I'm Paul in the building." vs "Hi, I'm calling about your services, front desk." at 0.8 s).
     user_vad_analyzer = SileroVADAnalyzer(
-        params=VADParams(stop_secs=float(os.getenv("AHS_VAD_STOP_SECS", "0.2")))
+        params=VADParams(
+            stop_secs=float(os.getenv("AHS_VAD_STOP_SECS", "0.2")),
+            # AHS 2026-09-27: background speech (a TV) at a tenth of the caller's level was detected as the
+            # caller, cancelling the reply and holding the turn open. Defaults are upstream's.
+            confidence=float(os.getenv("AHS_VAD_CONFIDENCE", "0.7")),
+            min_volume=float(os.getenv("AHS_VAD_MIN_VOLUME", "0.6")),
+        )
     )
 
     # Configure turn strategies based on STT provider, model, and workflow configuration
